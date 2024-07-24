@@ -1,0 +1,395 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Configurations Kubernetes</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            line-height: 1.6;
+        }
+
+        pre {
+            background-color: #f4f4f4;
+            padding: 10px;
+            border: 1px solid #ddd;
+            overflow: auto;
+            border-radius: 5px;
+        }
+
+        h2, h3 {
+            color: #333;
+        }
+        h1{
+            color: #fff;
+        }
+        .h1{
+            color: black;
+          }
+        h2 {
+            margin-top: 40px;
+            border-bottom: 2px solid #ddd;
+            padding-bottom: 10px;
+        }
+
+        h3 {
+            margin-top: 20px;
+            margin-bottom: 10px;
+        }
+
+        .img {
+            display: block;
+            margin: 20px auto;
+            max-width: 100%;
+            height: auto;
+        }
+
+        p {
+            margin-bottom: 20px;
+        }
+
+        header,footer {
+            background-color: #333;
+            color: #fff;
+            padding: 10px 20px;
+            text-align: center;
+        }
+
+        footer p {
+            margin: 10px 0;
+        }
+
+.right {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    background: #e0e0e0;
+    border: 1px solid #bdbdbd;
+    padding: 4px 15px;
+    border-radius: 14px;
+    font-size: 13px;
+    color: #4CAF50;
+    font-size: 9px;
+    float: right;
+    margin-left: 20px;
+    margin-bottom: 20px;
+}
+.blurred {
+    filter: blur(3px);
+    color: inherit; /* Conserve la couleur du texte pour qu'il reste visible sous le flou */
+}
+
+
+
+    </style>
+</head>
+
+<body>
+
+<header>
+
+    <h1>Guide de Configuration Kubernetes</h1>
+    <p>Votre guide complet pour installer et administrer Kubernetes</p>
+
+</header>
+
+<main>
+    <h3>Schéma d'Architecture</h3>
+    <pre>
++----------------------------------+
+|         Nœud Control Plane       |
+|----------------------------------|
+| addr 192.168.100.1               |
+|                                  |
+|                                  |
+|                                  |
++----------------------------------+
+              |
+              |
+   +----------+----------+
+   |                     |
+   |                     |
+   v                     v
++----------------+  +----------------+
+| Nœud Worker 1  |  |  Nœud Worker 2  |
+|----------------|  |----------------|
+| addr           |  | addr           |
+|192.168.100.05  |  |192.168.100.110 |
+|                |  |                |
++----------------+  +----------------+
+</pre>
+    <p>Assurez-vous que les fichiers /etc/hosts sont égaux sur les trois machines :</p>
+    <pre>192.168.100.1 control-plane
+192.168.100.105 node-worker1
+192.168.100.110 node-worker2</pre>
+    <h3>Prérequis</h3>
+    <p>Système d'exploitation : Debian / CentOS</p>
+    <p>Ressources recommandées : 2 CPU, 4 Go de RAM (par nœud)</p>
+    <h2>Sur le control-plane et workers</h2>
+    <p>Mettre à jour et installer les dépendances nécessaires</p>
+    <pre>apt -y update</pre>
+    <img src="m1.png" alt="Image" class="img">
+    <pre>apt -y install containerd iptables apt-transport-https gnupg2 curl sudo gpg</pre>
+    <img src="m2.png" alt="Image" class="img">
+    <p>Containerd est un runtime de conteneurs utilisé pour gérer le cycle de vie complet d'un conteneur, de son téléchargement à son exécution et à sa terminaison. Il est devenu le runtime de conteneurs par défaut pour Kubernetes depuis que Docker a été déprécié.
+
+        Les commandes suivantes permettent de configurer Containerd afin qu'il utilise systemd comme gestionnaire de groupes de contrôle (cgroups), ce qui est recommandé pour une meilleure intégration avec Kubernetes.</p>
+    <h3>Creation du fichier de configuration</h3>
+    <pre>mkdir -p /etc/containerd</pre>
+    <img src="m3.png" alt="Image" class="img">
+    <h3>Générer le fichier de configuration par défaut de Containerd</h3>
+    <pre>containerd config default > /etc/containerd/config.toml
+</pre>
+    <img src="m4.png" alt="Image" class="img">
+    <p>Cette commande génère un fichier de configuration par défaut pour Containerd et le sauvegarde dans /etc/containerd/config.toml. Ce fichier contient tous les paramètres de configuration nécessaires au bon fonctionnement de Containerd.</p>
+    <h3>Modifier la configuration pour utiliser systemd comme cgroup</h3>
+    <pre>sed -i 's/SystemdCgroup = false/SystemdCgroup = true/' /etc/containerd/config.toml
+</pre>
+    <img src="m5.png" alt="Image" class="img">
+    <p>Cette commande modifie le fichier de configuration de Containerd pour activer l'utilisation de systemd comme gestionnaire de cgroups. L'option SystemdCgroup est passée de false à true. Cela permet une meilleure gestion des ressources et une intégration plus fluide avec Kubernetes.</p>
+    <h3>Redémarrer le service Containerd:</h3>
+    <pre>systemctl restart containerd
+</pre>
+    <img src="m6.png" alt="Image" class="img">
+    <h3>Configureration du sysctl pour Kubernetes</h3>
+    <pre>
+    cat > /etc/sysctl.d/99-k8s-cri.conf << EOF
+     net.bridge.bridge-nf-call-iptables=1
+     net.bridge.bridge-nf-call-ip6tables=1
+     net.ipv4.ip_forward=1
+     EOF
+    </pre>
+    <img src="m7.png" alt="Image" class="img">
+    <p>Appliquation des paramètres sysctl</p>
+    <pre>sysctl --system
+</pre>
+    <img src="m8.png" alt="Image" class="img">
+    <h3>Chargement des modules du noyau</h3>
+    <p>Pour que Kubernetes fonctionne correctement, il est nécessaire de charger certains modules du noyau Linux qui permettent la gestion des ponts réseau et la mise en œuvre de pare-feu pour le trafic réseau. Les modules overlay et br_netfilter sont particulièrement importants pour assurer le bon fonctionnement du réseau dans un cluster Kubernetes.</p>
+    <pre>modprobe overlay
+</pre>
+    <img src="m9.png" alt="Image" class="img">
+    <pre>modprobe br_netfilter</pre>
+    <img src="m10.png" alt="Image" class="img">
+    <h3>Configurer le chargement automatique des modules au démarrage:</h3>
+    <pre>echo -e overlay\\nbr_netfilter > /etc/modules-load.d/k8s.conf</pre>
+    <img src="m11.png" alt="Image" class="img">
+    <h3>Mettre à jour les alternatives iptables:</h3>
+    <pre>update-alternatives --config iptables</pre>
+    <img src="m12.png" alt="Image" class="img">
+    <h3>Désactiver le swap:</h3>
+    <pre>swapoff -a
+</pre>
+    <pre>sed -i '/ swap / s/^\(.*\)$/#\1/g' /etc/fstab</pre>
+    <pre>update-grub</pre>
+    <img src="m13.png" alt="" class="img">
+    <h3>Installation des paquets kubernetes</h3>
+    <p>Initialisation de kubernetes</p>
+    <pre>curl -fsSL https://pkgs.k8s.io/core:/stable:/v1.30/deb/Release.key | sudo gpg --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg</pre>
+    <pre>echo 'deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v1.30/deb/ /' | sudo tee /etc/apt/sources.list.d/kubernetes.list</pre>
+    <img src="m14.png" alt="Image" class="img">
+    <p>Installations</p>
+    <pre>sudo apt-get update
+    </pre>
+    <img src="m15.png" alt="" class="img">
+    <pre>sudo apt-get install -y kubelet kubeadm kubectl</pre>
+    <img src="m16.png" alt="" class="img">
+    <pre>apt-mark hold kubelet kubeadm kubectl</pre>
+    <img src="m17.png" alt="Image" class="img">
+
+    <pre>sudo systemctl enable --now kubelet</pre>
+    <h3>Initialiser le cluster Kubernetes:</h3>
+    <h2>uniquement sur le control-plane</h2>
+    <pre>kubeadm init --control-plane-endpoint=192.168.100.1 --pod-network-cidr=192.168.0.0/16 --cri-socket=unix:///run/containerd/containerd.sock</pre>
+    <img src="m18.png" alt="Image" class="img">
+    <h3>Configurer Kubernetes pour kubectl</h3>
+    <pre>mkdir -p $HOME/.kube
+</pre>
+    <pre>cp -i /etc/kubernetes/admin.conf $HOME/.kube/config</pre>
+    <pre>
+chown $(id -u):$(id -g) $HOME/.kube/config</pre>
+    <img src="m19.png" alt="Image" class="img">
+    <p>Ces commandes configurent kubectl, l'outil de ligne de commande pour interagir avec Kubernetes, en copiant le fichier de configuration généré par kubeadm init dans le répertoire personnel de l'utilisateur.</p>
+    <h3>Installer le plugin réseau Calico:</h3>
+    <pre>wget https://raw.githubusercontent.com/projectcalico/calico/master/manifests/calico.yaml
+kubectl apply -f calico.yaml</pre>
+    <img src="m20.png" alt="" class="img">
+    <p>Vérifiez l'état sur le nœud du plan de contrôle</p>
+    <pre>kubectl get nodes</pre>
+    <img src="m0.png" alt="Image" class="img">
+    <h2>uniquement sur les Wokers</h2>
+    <h3>Rejoindre le cluster Kubernetes</h3>
+    <pre>kubeadm join "control-plane-ip":6443 --token "token" --discovery-token-ca-cert-hash sha256:"hash" </pre>
+    <h3>Worker1</h3>
+    <pre>kubeadm join 192.168.100.1:6443 --token n9ysag.cv2eg8o3pljkz6tu --discovery-token-ca-cert-hash sha256:aeda7db8ca893be234c53505e05c85bf988adc1b96ab6297cceb204279a8fcb7
+</pre>
+    <img src="m21.png" alt="Image" class="img">
+    <h3>Worker2</h3>
+    <pre>kubeadm join 192.168.100.1:6443 --token n9ysag.cv2eg8o3pljkz6tu --discovery-token-ca-cert-hash sha256:aeda7db8ca893be234c53505e05c85bf988adc1b96ab6297cceb204279a8fcb7
+</pre>
+    <img src="m22.png" alt="Image" class="img">
+    <p>Vérifiez l'état sur le nœud du plan de contrôle. C'est OK si tous les STATUS sont Prêts.</p>
+    <pre>kubectl get nodes </pre>
+    <img src="m23.png" alt="Images" class="img">
+    <h3>Les pods</h3>
+    <p>Un pod est la plus petite unité d'exécution de Kubernetes . Un pod encapsule une ou plusieurs applications. Les pods sont éphémères par nature. Si un pod (ou le nœud sur lequel il s'exécute) tombe en panne, Kubernetes peut automatiquement créer une nouvelle réplique de ce pod pour poursuivre les opérations.</p>
+    <h3>créer un pod</h3>
+    <p>cas 1</p>
+    <pre>kubectl create deployment illo-nginx --image=nginx</pre>
+    <img src="m24.png" alt="Image" class="img">
+    <p>créer un pod avec un fichier manifeste yaml</p>
+    <pre>nano mon-pod.yaml</pre>
+    <pre>
+ apiVersion: v1
+kind: Pod
+metadata:
+  name: mon-pod
+spec:
+  containers:
+  - name: mon-conteneur
+    image: nginx:latest
+
+    </pre>
+    <pre>kubectl apply -f mon-pod</pre>
+    <pre>kubectl get pods </pre>
+    <img src="m33.png" alt="Image" class="img">
+    <h3>Création du stockage externe pour les pods</h3>
+    <p>
+        Configurer le stockage persistant dans le cluster Kubernetes.</p>
+    <pre># créer une définition PV
+  vim nfs-pv.yml
+    </pre>
+    <pre>
+ apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: nfs-pv
+spec:
+  capacity:
+    storage: 10Gi
+  accessModes:
+    - ReadWriteMany
+  persistentVolumeReclaimPolicy: Retain
+  nfs:
+    path: /home/nfsshare
+    server: 192.168.100.1
+    readOnly: false
+</pre>
+    <pre> kubectl create -f nfs-pv.yml</pre>
+    <img src="m25.png" alt="Image" class="img">
+    <pre>kubectl get pv</pre>
+    <img src="m26.png" alt="Image" class="img">
+    <p>creation d'un pvc</p>
+    <pre>vim nfs-pvc.yml</pre>
+    <pre>
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  # any PVC name
+  name: nfs-pvc
+spec:
+  accessModes:
+  - ReadWriteMany
+  resources:
+     requests:
+       storage: 10Gi
+    </pre>
+    <pre> kubectl create -f nfs-pvc.yml</pre>
+    <img src="m27.png" alt="Image" class="img">
+    <pre>kubectl get pvc</pre>
+    <img src="m28.png" alt="Image" class="img">
+    <h3>Créez des pods avec du PVC</h3>
+    <pre>vim nginx-nfs.yml</pre>
+    <pre>
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  # any Deployment name
+  name: nginx-nfs
+  labels:
+    name: nginx-nfs
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: nginx-nfs
+  template:
+    metadata:
+      labels:
+        app: nginx-nfs
+    spec:
+      containers:
+      - name: nginx-nfs
+        image: nginx
+        ports:
+          - name: web
+            containerPort: 80
+        volumeMounts:
+          - name: nfs-share
+            # mount point in container
+            mountPath: /usr/share/nginx/html
+      volumes:
+        - name: nfs-share
+          persistentVolumeClaim:
+            # PVC name you created
+            claimName: nfs-pvc
+    </pre>
+    <pre>kubectl create -f nginx-nfs.yml</pre>
+    <img src="m29.png" alt="Image" class="img">
+    <pre>kubectl get pods -o wide</pre>
+    <img src="m30.png" alt="Image" class="img">
+    <pre>kubectl expose deployment nginx-nfs --type="NodePort" --port 80</pre>
+    <img src="m31.png" alt="Image" class="img">
+    <pre>kubectl get service nginx-nfs</pre>
+    <img src="m32.png" alt="Image" class="img">
+    <p>créer un fichier de test sous le répertoire partagé NFS</p>
+    <h3>vérifier les accès</h3>
+    <pre> echo 'NFS Persistent Storage Test' > /home/nfsshare/index.html</pre>
+    <pre>curl 10.97.254.250</pre>
+    <img src="m34.png" alt="Image" class="img">
+    <h3>Activation de Tableau de bord sur le <strong>CONTROL-PLANE</strong></h3>
+    <pre>kubectl apply -f https://raw.githubusercontent.com/kubernetes/dashboard/v2.7.0/aio/deploy/recommended.yaml</pre>
+    <h3>Ajout de compte pour la gestion du tableau de bord.</h3>
+    <pre>kubectl create serviceaccount -n kubernetes-dashboard admin-user</pre>
+    <pre>vim rbac.yml</pre>
+    <pre>apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: admin-user
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: cluster-admin
+subjects:
+- kind: ServiceAccount
+  name: admin-user
+  namespace: kubernetes-dashboard</pre>
+    <pre>kubectl apply -f rbac.yml</pre>
+    <h3>obtenir le jeton de sécurité du compte </h3>
+    <pre>kubectl -n kubernetes-dashboard create token admin-user</pre>
+    <img src="m35.png" alt="Image" class="img">
+    <p>lancer le proxy</p>
+    <pre>kubectl proxy</pre>
+    <h3>si accès à partir d'autres hôtes clients, définir la redirection de port</h3>
+    <pre> kubectl port-forward -n kubernetes-dashboard service/kubernetes-dashboard --address 0.0.0.0 10443:443</pre>
+    <img src="m36.png" alt="Image" class="img">
+    <img src="m37.png" alt="Image" class="img">
+    <img src="m38.png" alt="Image" class="img">
+    <img src="m39.png" alt="Image" class="img">
+
+</main>
+
+
+<footer>
+    <p>&copy; 2024 Guide Docker. Tous droits réservés.</p>
+    <p>Contact: <a href="mailto:amadouadmnsys@gmail.com" style="color: #fff;">amadouadmnsys@gmail.com</a></p>
+</footer>
+
+
+</body>
+
+</html>
