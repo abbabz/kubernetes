@@ -4,7 +4,7 @@
             margin: 20px;
             line-height: 1.6;
         }
-nav .logo{
+header .logo{
     display: flex;
     align-items: center;
     gap: 10px;
